@@ -1,7 +1,6 @@
+use crate::player::Player;
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::{
-    DefaultTerminal, Frame, prelude::Buffer, prelude::Rect, style::Color, widgets::Widget,
-};
+use ratatui::{DefaultTerminal, Frame, prelude::Buffer, prelude::Rect, widgets::Widget};
 use std::{io, sync::mpsc, thread, time::Duration};
 
 pub enum Event {
@@ -11,8 +10,7 @@ pub enum Event {
 
 pub struct App {
     pub exit: bool,
-    pub x: u16,
-    pub y: u16,
+    pub players: Vec<Player>,
     pub background_progress: f64,
 }
 
@@ -62,16 +60,24 @@ impl App {
                     self.exit = true;
                 }
                 KeyCode::Char('w') | KeyCode::Up => {
-                    self.y = self.y.saturating_sub(1);
+                    for player in &mut self.players {
+                        player.y = player.y.saturating_sub(1);
+                    }
                 }
                 KeyCode::Char('a') | KeyCode::Left => {
-                    self.x = self.x.saturating_sub(2);
+                    for player in &mut self.players {
+                        player.x = player.x.saturating_sub(2);
+                    }
                 }
                 KeyCode::Char('s') | KeyCode::Down => {
-                    self.y = self.y.saturating_add(1);
+                    for player in &mut self.players {
+                        player.y = player.y.saturating_add(1);
+                    }
                 }
                 KeyCode::Char('d') | KeyCode::Right => {
-                    self.x = self.x.saturating_add(2);
+                    for player in &mut self.players {
+                        player.x = player.x.saturating_add(2);
+                    }
                 }
                 _ => {}
             };
@@ -83,12 +89,8 @@ impl App {
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let x = self.x.min(area.width.saturating_sub(2));
-        let y = self.y.min(area.height.saturating_sub(1));
-        for dx in 0..2 {
-            for dy in 0..1 {
-                buf[(x.saturating_add(dx as u16), y.saturating_add(dy as u16))].set_bg(Color::Red);
-            }
+        for player in &self.players {
+            player.render(area, buf);
         }
     }
 }
