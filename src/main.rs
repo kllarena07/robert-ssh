@@ -1,43 +1,32 @@
-use std::{
-    collections::HashMap,
-    io,
-    sync::mpsc,
-    thread,
-    time::{Duration, Instant},
-};
-
-use crossterm::event::{KeyCode, KeyEventKind};
+use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
-    layout::{Constraint, Layout},
     prelude::{Buffer, Rect},
-    style::{Color, Style, Stylize},
-    symbols::border,
-    text::Line,
-    widgets::{Block, Gauge, Widget},
+    style::Color,
+    widgets::Widget,
 };
+use std::{io, sync::mpsc, thread, time::Duration};
 
 fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
 
-    // Create the channel via which the events will be sent to the main app.
     let (event_tx, event_rx) = mpsc::channel::<Event>();
 
-    // Thread to listen for input events.
     let tx_to_input_events = event_tx.clone();
     thread::spawn(move || {
         handle_input_events(tx_to_input_events);
+    });
+
+    let tx_to_background_progress_events = event_tx.clone();
+    thread::spawn(move || {
+        run_background_thread(tx_to_background_progress_events);
     });
 
     let mut app = App {
         exit: false,
         x: 0,
         y: 0,
-        x_f: 0.0,
-        y_f: 0.0,
-        vx: 0.0,
-        vy: 0.0,
-        pressed_keys: HashMap::new(),
+        background_progress: 0.0,
     };
 
     // App runs on the main thread.
@@ -52,21 +41,17 @@ fn main() -> io::Result<()> {
 
 // Events that can be sent to the main thread.
 enum Event {
-    Input(crossterm::event::KeyEvent), // crossterm key input event
+    Input(crossterm::event::KeyEvent),
+    Progress(f64),
 }
 
 pub struct App {
     exit: bool,
     x: u16,
     y: u16,
-    x_f: f32,
-    y_f: f32,
-    vx: f32,
-    vy: f32,
-    pressed_keys: HashMap<KeyCode, Instant>,
+    background_progress: f64,
 }
 
-/// Block, waiting for input events from the user.
 fn handle_input_events(tx: mpsc::Sender<Event>) {
     loop {
         match crossterm::event::read().unwrap() {
@@ -76,69 +61,56 @@ fn handle_input_events(tx: mpsc::Sender<Event>) {
     }
 }
 
+fn run_background_thread(tx: mpsc::Sender<Event>) {
+    let mut counter = 0_f64;
+    loop {
+        thread::sleep(Duration::from_millis(1000 / 60)); // ~16.67ms for 60fps
+        counter = (counter + 1.0) % 60.0;
+        tx.send(Event::Progress(counter)).unwrap();
+    }
+}
+
 impl App {
-    /// Main task to be run continuously
     fn run(&mut self, terminal: &mut DefaultTerminal, rx: mpsc::Receiver<Event>) -> io::Result<()> {
         while !self.exit {
-            // Handle all pending events
-            while let Ok(event) = rx.try_recv() {
-                if let Event::Input(key_event) = event {
-                    self.handle_key_event(key_event)?;
-                }
+            match rx.recv().unwrap() {
+                Event::Input(key_event) => self.handle_key_event(key_event)?,
+                Event::Progress(progress) => self.background_progress = progress,
             }
-            // Update and draw
-            terminal.draw(|frame| {
-                let area = frame.area();
-                self.update(area);
-                self.draw(frame);
-            })?;
-            thread::sleep(Duration::from_millis(16));
+            terminal.draw(|frame| self.draw(frame))?;
         }
         Ok(())
     }
 
-    /// Update the app state
-    fn update(&mut self, area: Rect) {
-        let speed_x = 0.5;
-        let speed_y = 0.35;
-        let now = Instant::now();
-        self.pressed_keys
-            .retain(|_, time| now.duration_since(*time) < Duration::from_millis(100));
-        self.vx = 0.0;
-        self.vy = 0.0;
-        for (key, _) in &self.pressed_keys {
-            match key {
-                KeyCode::Char('w') => self.vy = -speed_y,
-                KeyCode::Char('s') => self.vy = speed_y,
-                KeyCode::Char('a') => self.vx = -speed_x,
-                KeyCode::Char('d') => self.vx = speed_x,
-                _ => {}
-            }
-        }
-        self.x_f += self.vx;
-        self.y_f += self.vy;
-        self.x_f = self.x_f.max(0.0).min(area.width as f32 - 2.0);
-        self.y_f = self.y_f.max(0.0).min(area.height as f32 - 1.0);
-        self.x = self.x_f as u16;
-        self.y = self.y_f as u16;
-    }
-
-    /// Render `self`, as we implemented the Widget trait for &App
     fn draw(&self, frame: &mut Frame) {
         frame.render_widget(self, frame.area());
     }
 
-    /// Actions that should be taken when a key event comes in.
     fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> io::Result<()> {
-        match key_event.code {
-            KeyCode::Char('q') if key_event.kind == KeyEventKind::Press => self.exit = true,
-            KeyCode::Char(c) if "wasd".contains(c) => {
-                if key_event.kind == KeyEventKind::Press {
-                    self.pressed_keys.insert(key_event.code, Instant::now());
+        if key_event.kind == KeyEventKind::Press {
+            match key_event.code {
+                KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.exit = true;
                 }
-            }
-            _ => {}
+                KeyCode::Esc => {
+                    self.exit = true;
+                }
+                KeyCode::Char('w') | KeyCode::Up => {
+                    self.y = self.y.saturating_sub(1);
+                }
+                KeyCode::Char('a') | KeyCode::Left => {
+                    self.x = self.x.saturating_sub(2);
+                }
+                KeyCode::Char('s') | KeyCode::Down => {
+                    self.y = self.y.saturating_add(1);
+                }
+                KeyCode::Char('d') | KeyCode::Right => {
+                    self.x = self.x.saturating_add(2);
+                }
+                _ => {}
+            };
         }
+
         Ok(())
     }
 }
@@ -149,7 +121,7 @@ impl Widget for &App {
         let y = self.y.min(area.height.saturating_sub(1));
         for dx in 0..2 {
             for dy in 0..1 {
-                buf[(x + dx, y + dy)].set_bg(Color::Red);
+                buf[(x.saturating_add(dx as u16), y.saturating_add(dy as u16))].set_bg(Color::Red);
             }
         }
     }
