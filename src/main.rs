@@ -20,11 +20,7 @@ fn main() -> io::Result<()> {
         app::run_background_thread(tx_to_background_progress_events);
     });
 
-    let players: Vec<Player> = vec![
-        Player { x: 0, y: 0 },
-        Player { x: 5, y: 5 },
-        Player { x: 10, y: 10 },
-    ];
+    let players: Vec<Player> = vec![Player { x: 0, y: 0 }];
 
     let mut app = app::App {
         exit: false,
