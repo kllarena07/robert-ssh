@@ -133,14 +133,14 @@ impl App {
                     let y = f64::from(coord.1);
                     let offset = f64::from(y > 1.0) * 0.5;
                     let actual_y = y * offset;
+                    let px_offset = self.offset.0;
+                    let py_offset = self.offset.1;
 
                     // we need to skip all the stuff that's not in view
-                    if x > width || height - actual_y < 0.0 {
+                    if x - px_offset > width || height - actual_y + py_offset < 0.0 {
                         continue;
                     }
 
-                    let px_offset = self.offset.0;
-                    let py_offset = self.offset.1;
                     ctx.draw(&Points {
                         coords: &[(x - px_offset, height - actual_y + py_offset)],
                         color: Color::Rgb(rv[0], rv[1], rv[2]),
