@@ -38,10 +38,7 @@
 //     app_result
 // }
 
-mod player;
-use crate::player::Player;
-
-use std::{collections::HashMap, io, sync::mpsc, thread};
+use std::{collections::HashMap, io, sync::mpsc, thread, time::Duration};
 
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use image::{ImageReader, Rgb};
@@ -49,14 +46,11 @@ use ratatui::{
     DefaultTerminal, Frame,
     style::Color,
     symbols::Marker,
-    widgets::{
-        Widget,
-        canvas::{Canvas, Points},
-    },
+    widgets::canvas::{Canvas, Points},
 };
 
 fn main() -> io::Result<()> {
-    let map = ImageReader::open("./large_map.png")
+    let map = ImageReader::open("./favicon-32x32.png")
         .expect("Error: Couldn't find map.png.")
         .decode()
         .expect("Error: Could not decode map.png.");
@@ -76,12 +70,17 @@ fn main() -> io::Result<()> {
         handle_input_events(tx_to_input_events);
     });
 
+    let tx_to_tick = event_tx.clone();
+    thread::spawn(move || {
+        tick(tx_to_tick);
+    });
+
     let mut app = App {
         exit: false,
         offset: (0.0, 0.0),
-        speed: 1,
+        sx: -1.5,
+        sy: -1.0,
         pixel_map,
-        player: Player { x: 0, y: 0 },
     };
 
     let app_result = app.run(&mut terminal, event_rx);
@@ -92,14 +91,22 @@ fn main() -> io::Result<()> {
 
 enum Event {
     Input(crossterm::event::KeyEvent),
+    Tick(()),
 }
 
 struct App {
     exit: bool,
     offset: (f64, f64),
-    speed: u16,
+    sx: f64,
+    sy: f64,
     pixel_map: HashMap<(u32, u32), Rgb<u8>>,
-    player: Player,
+}
+
+fn tick(tx: mpsc::Sender<Event>) {
+    loop {
+        tx.send(Event::Tick(())).unwrap();
+        thread::sleep(Duration::from_millis(1000 / 30));
+    }
 }
 
 fn handle_input_events(tx: mpsc::Sender<Event>) {
@@ -120,16 +127,32 @@ impl App {
         while !self.exit {
             match rx.recv().unwrap() {
                 Event::Input(key_event) => self.handle_key_event(key_event)?,
+                Event::Tick(_) => {}
             }
             terminal.draw(|frame| self.draw(frame))?;
         }
         Ok(())
     }
 
-    fn draw(&self, frame: &mut Frame) {
+    fn draw(&mut self, frame: &mut Frame) {
         let fa = frame.area();
         let width = f64::from(fa.width);
         let height = f64::from(fa.height);
+
+        if self.offset.1 > 0.0 {
+            self.sy = -self.sy;
+        }
+        if self.offset.1 < -(height - 16.0) {
+            self.sy = -self.sy;
+        }
+        if self.offset.0 < -(width - 32.0) {
+            self.sx = -self.sx;
+        }
+        if self.offset.0 > 0.0 {
+            self.sx = -self.sx;
+        }
+        self.offset.0 += self.sx;
+        self.offset.1 += self.sy;
 
         let canvas = Canvas::default()
             .marker(Marker::HalfBlock)
@@ -156,7 +179,6 @@ impl App {
                 }
             });
         frame.render_widget(canvas, frame.area());
-        frame.render_widget(&self.player, frame.area());
     }
 
     fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> io::Result<()> {
@@ -170,26 +192,6 @@ impl App {
                 }
                 KeyCode::Esc => {
                     self.exit = true;
-                }
-                KeyCode::Char('w') | KeyCode::Up => {
-                    self.player.y -= self.speed;
-                    // if self.offset.1 > 0.0 {
-                    //     self.offset.1 -= self.speed;
-                    // }
-                }
-                KeyCode::Char('a') | KeyCode::Left => {
-                    self.player.x -= self.speed;
-                    // if self.offset.0 > 0.0 {
-                    //     self.offset.0 -= self.speed;
-                    // }
-                }
-                KeyCode::Char('s') | KeyCode::Down => {
-                    self.player.y += self.speed;
-                    // self.offset.1 += self.speed;
-                }
-                KeyCode::Char('d') | KeyCode::Right => {
-                    self.player.x += self.speed;
-                    // self.offset.0 += self.speed;
                 }
                 _ => {}
             };
