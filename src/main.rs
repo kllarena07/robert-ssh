@@ -38,6 +38,9 @@
 //     app_result
 // }
 
+mod player;
+use crate::player::Player;
+
 use std::{collections::HashMap, io, sync::mpsc, thread};
 
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
@@ -46,11 +49,14 @@ use ratatui::{
     DefaultTerminal, Frame,
     style::Color,
     symbols::Marker,
-    widgets::canvas::{Canvas, Points},
+    widgets::{
+        Widget,
+        canvas::{Canvas, Points},
+    },
 };
 
 fn main() -> io::Result<()> {
-    let map = ImageReader::open("./map.png")
+    let map = ImageReader::open("./large_map.png")
         .expect("Error: Couldn't find map.png.")
         .decode()
         .expect("Error: Could not decode map.png.");
@@ -73,8 +79,9 @@ fn main() -> io::Result<()> {
     let mut app = App {
         exit: false,
         offset: (0.0, 0.0),
-        speed: 5.0,
+        speed: 1,
         pixel_map,
+        player: Player { x: 0, y: 0 },
     };
 
     let app_result = app.run(&mut terminal, event_rx);
@@ -90,8 +97,9 @@ enum Event {
 struct App {
     exit: bool,
     offset: (f64, f64),
-    speed: f64,
+    speed: u16,
     pixel_map: HashMap<(u32, u32), Rgb<u8>>,
+    player: Player,
 }
 
 fn handle_input_events(tx: mpsc::Sender<Event>) {
@@ -148,6 +156,7 @@ impl App {
                 }
             });
         frame.render_widget(canvas, frame.area());
+        frame.render_widget(&self.player, frame.area());
     }
 
     fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> io::Result<()> {
@@ -163,20 +172,24 @@ impl App {
                     self.exit = true;
                 }
                 KeyCode::Char('w') | KeyCode::Up => {
-                    if self.offset.1 > 0.0 {
-                        self.offset.1 -= self.speed;
-                    }
+                    self.player.y -= self.speed;
+                    // if self.offset.1 > 0.0 {
+                    //     self.offset.1 -= self.speed;
+                    // }
                 }
                 KeyCode::Char('a') | KeyCode::Left => {
-                    if self.offset.0 > 0.0 {
-                        self.offset.0 -= self.speed;
-                    }
+                    self.player.x -= self.speed;
+                    // if self.offset.0 > 0.0 {
+                    //     self.offset.0 -= self.speed;
+                    // }
                 }
                 KeyCode::Char('s') | KeyCode::Down => {
-                    self.offset.1 += self.speed;
+                    self.player.y += self.speed;
+                    // self.offset.1 += self.speed;
                 }
                 KeyCode::Char('d') | KeyCode::Right => {
-                    self.offset.0 += self.speed;
+                    self.player.x += self.speed;
+                    // self.offset.0 += self.speed;
                 }
                 _ => {}
             };
