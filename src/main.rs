@@ -205,19 +205,19 @@ impl App {
     fn get_speed(&self) -> f64 {
         (self.sx * self.sx + self.sy * self.sy).sqrt()
     }
-    fn generate_magnitude(&mut self, default: f64) -> f64 {
-        if self.rng.gen_range(0.0..1.0) < 1.0 / 10.0 {
-            20.0
+    fn generate_magnitude(&mut self, default: f64, is_x: bool) -> f64 {
+        if self.rng.gen_range(0.0..1.0) < 1.0 / 5.0 {
+            if is_x { 20.0 } else { 5.0 }
         } else {
             default
         }
     }
     fn reverse_sy(&mut self) {
-        let magnitude = self.generate_magnitude(1.0);
+        let magnitude = self.generate_magnitude(1.0, false);
         self.sy = -self.sy.signum() * magnitude;
     }
     fn reverse_sx(&mut self) {
-        let magnitude = self.generate_magnitude(1.5);
+        let magnitude = self.generate_magnitude(1.5, true);
         self.sx = -self.sx.signum() * magnitude;
     }
 }
