@@ -71,11 +71,10 @@ fn main() -> io::Result<()> {
     let mut app = App {
         exit: false,
         offset: (0.0, 0.0),
-        sx: -1.0,
+        sx: -1.5,
         sy: -1.0,
         pixel_map: normal_pixel_map,
         scared_pixel_map,
-        use_scared: false,
         rng,
     };
 
@@ -97,7 +96,6 @@ struct App {
     sy: f64,
     pixel_map: HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>>,
     scared_pixel_map: HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>>,
-    use_scared: bool,
     rng: ThreadRng,
 }
 
@@ -153,18 +151,12 @@ impl App {
         self.offset.0 += self.sx;
         self.offset.1 += self.sy;
 
-        if self.get_speed() > 10.0 {
-            self.use_scared = true;
-        } else if self.get_speed() <= 10.0 {
-            self.use_scared = false;
-        }
-
         let canvas = Canvas::default()
             .marker(Marker::HalfBlock)
             .x_bounds([0.0, width])
             .y_bounds([0.0, height])
             .paint(|ctx| {
-                let current_map = if self.use_scared {
+                let current_map = if self.is_scared() {
                     &self.scared_pixel_map
                 } else {
                     &self.pixel_map
@@ -202,9 +194,6 @@ impl App {
 
         Ok(())
     }
-    fn get_speed(&self) -> f64 {
-        (self.sx * self.sx + self.sy * self.sy).sqrt()
-    }
     fn generate_magnitude(&mut self, default: f64, is_x: bool) -> f64 {
         if self.rng.gen_range(0.0..1.0) < 1.0 / 5.0 {
             if is_x { 20.0 } else { 5.0 }
@@ -219,5 +208,9 @@ impl App {
     fn reverse_sx(&mut self) {
         let magnitude = self.generate_magnitude(1.5, true);
         self.sx = -self.sx.signum() * magnitude;
+    }
+
+    fn is_scared(&self) -> bool {
+        self.sx.abs() > 2.0 || self.sy.abs() > 2.0
     }
 }
