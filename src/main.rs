@@ -195,8 +195,10 @@ impl App {
         Ok(())
     }
     fn generate_magnitude(&mut self, default: f64, is_x: bool) -> f64 {
-        if self.rng.gen_range(0.0..1.0) < 1.0 / 5.0 {
-            if is_x { 20.0 } else { 5.0 }
+        let odds = if is_x { 1.0 / 2.0 } else { 1.0 / 5.0 };
+        let crazy_value = if is_x { 20.0 } else { 5.0 };
+        if self.rng.gen_range(0.0..1.0) < odds {
+            crazy_value
         } else {
             default
         }
