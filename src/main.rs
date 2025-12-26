@@ -139,44 +139,23 @@ impl App {
         let height = f64::from(fa.height);
 
         if self.offset.1 > 0.0 {
-            let magnitude = if self.rng.gen_range(0.0..1.0) < 1.0 / 10.0 {
-                20.0
-            } else {
-                1.0
-            };
-            self.sy = -self.sy.signum() * magnitude;
+            self.reverse_sy();
         }
         if self.offset.1 < -(height - 16.0) {
-            let magnitude = if self.rng.gen_range(0.0..1.0) < 1.0 / 10.0 {
-                20.0
-            } else {
-                1.0
-            };
-            self.sy = -self.sy.signum() * magnitude;
+            self.reverse_sy();
         }
         if self.offset.0 < -(width - 32.0) {
-            let magnitude = if self.rng.gen_range(0.0..1.0) < 1.0 / 20.0 {
-                20.0
-            } else {
-                1.5
-            };
-            self.sx = -self.sx.signum() * magnitude;
+            self.reverse_sx();
         }
         if self.offset.0 > 0.0 {
-            let magnitude = if self.rng.gen_range(0.0..1.0) < 1.0 / 20.0 {
-                20.0
-            } else {
-                1.5
-            };
-            self.sx = -self.sx.signum() * magnitude;
+            self.reverse_sx();
         }
         self.offset.0 += self.sx;
         self.offset.1 += self.sy;
 
-        let speed = (self.sx * self.sx + self.sy * self.sy).sqrt();
-        if speed > 10.0 {
+        if self.get_speed() > 10.0 {
             self.use_scared = true;
-        } else if speed <= 10.0 {
+        } else if self.get_speed() <= 10.0 {
             self.use_scared = false;
         }
 
@@ -195,11 +174,6 @@ impl App {
                     let y = coord.1;
                     let px_offset = self.offset.0;
                     let py_offset = self.offset.1;
-
-                    // we need to skip all the stuff that's not in view
-                    if *x - px_offset > width || height - *y + py_offset < 0.0 {
-                        continue;
-                    }
 
                     ctx.draw(&Points {
                         coords: &[(*x - px_offset, height - *y + py_offset)],
@@ -227,5 +201,23 @@ impl App {
         }
 
         Ok(())
+    }
+    fn get_speed(&self) -> f64 {
+        (self.sx * self.sx + self.sy * self.sy).sqrt()
+    }
+    fn generate_magnitude(&mut self, default: f64) -> f64 {
+        if self.rng.gen_range(0.0..1.0) < 1.0 / 10.0 {
+            20.0
+        } else {
+            default
+        }
+    }
+    fn reverse_sy(&mut self) {
+        let magnitude = self.generate_magnitude(1.0);
+        self.sy = -self.sy.signum() * magnitude;
+    }
+    fn reverse_sx(&mut self) {
+        let magnitude = self.generate_magnitude(1.5);
+        self.sx = -self.sx.signum() * magnitude;
     }
 }
