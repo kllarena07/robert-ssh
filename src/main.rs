@@ -124,7 +124,6 @@ impl App {
         }
         Ok(())
     }
-
     fn draw(&mut self, frame: &mut Frame) {
         let fa = frame.area();
         let width = f64::from(fa.width);
@@ -158,7 +157,6 @@ impl App {
             });
         frame.render_widget(canvas, frame.area());
     }
-
     fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> io::Result<()> {
         if key_event.kind == KeyEventKind::Press {
             match key_event.code {
