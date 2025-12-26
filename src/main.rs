@@ -130,18 +130,7 @@ impl App {
         let width = f64::from(fa.width);
         let height = f64::from(fa.height);
 
-        if self.offset.1 > 0.0 {
-            self.reverse_sy();
-        }
-        if self.offset.1 < -(height - 16.0) {
-            self.reverse_sy();
-        }
-        if self.offset.0 < -(width - 32.0) {
-            self.reverse_sx();
-        }
-        if self.offset.0 > 0.0 {
-            self.reverse_sx();
-        }
+        self.check_bounds(width, height);
         self.offset.0 += self.sx;
         self.offset.1 += self.sy;
 
@@ -187,6 +176,20 @@ impl App {
         }
 
         Ok(())
+    }
+    fn check_bounds(&mut self, width: f64, height: f64) {
+        if self.offset.1 > 0.0 {
+            self.reverse_sy();
+        }
+        if self.offset.1 < -(height - 16.0) {
+            self.reverse_sy();
+        }
+        if self.offset.0 < -(width - 32.0) {
+            self.reverse_sx();
+        }
+        if self.offset.0 > 0.0 {
+            self.reverse_sx();
+        }
     }
     fn generate_magnitude(&mut self, default: f64, is_x: bool) -> f64 {
         let odds = if is_x { 1.0 / 2.0 } else { 1.0 / 5.0 };
