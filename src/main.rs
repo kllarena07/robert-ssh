@@ -1,4 +1,10 @@
-use std::{collections::HashMap, io, sync::mpsc, thread, time::Duration};
+use std::{
+    collections::HashMap,
+    io,
+    sync::mpsc::{Receiver, Sender, channel},
+    thread,
+    time::Duration,
+};
 
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use image::{ImageReader, Rgb};
@@ -11,34 +17,19 @@ use ratatui::{
     widgets::canvas::{Canvas, Points},
 };
 
-fn main() -> io::Result<()> {
-    let normal = ImageReader::open("./normal.png")
-        .expect("Error: Couldn't find map.png.")
-        .decode()
-        .expect("Error: Could not decode map.png.");
-    let normal_as_rgb = normal.to_rgb8();
-    let normal_pixel_map: HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>> = normal_as_rgb
-        .enumerate_pixels()
-        .map(|(x, y, rgb_val)| {
-            let x = f64::from(x);
-            let y = f64::from(y);
-            let offset = f64::from(y > 1.0) * 0.5;
-            let actual_y = y * offset;
-            (
-                (OrderedFloat(x), OrderedFloat(actual_y)),
-                rgb_val.to_owned(),
-            )
-        })
-        .collect::<Vec<((OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>)>>() // convert to Vec<((f64, f64), Rgb<u8>)>
-        .into_iter()
-        .collect::<HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>>>(); // <HashMap<(f64, f64), Rgb<u8>>>
+type PixelMap = HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>>;
 
-    let scared = ImageReader::open("./scared.png")
-        .expect("Error: Couldn't find scared.png.")
+fn load_to_pixel_map(file_name: &str) -> PixelMap {
+    let open_expect = format!("Couldn't find {file_name}.");
+    let decode_expect = format!("Couldn't decode {file_name}.");
+
+    let img = ImageReader::open(file_name)
+        .expect(&open_expect)
         .decode()
-        .expect("Error: Could not decode scared.png.");
-    let scared_as_rgb = scared.to_rgb8();
-    let scared_pixel_map: HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>> = scared_as_rgb
+        .expect(&decode_expect);
+    let img_as_rgb = img.to_rgb8();
+
+    let pixel_map: PixelMap = img_as_rgb
         .enumerate_pixels()
         .map(|(x, y, rgb_val)| {
             let x = f64::from(x);
@@ -52,11 +43,18 @@ fn main() -> io::Result<()> {
         })
         .collect::<Vec<((OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>)>>() // convert to Vec<((f64, f64), Rgb<u8>)>
         .into_iter()
-        .collect::<HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>>>(); // <HashMap<(f64, f64), Rgb<u8>>>
+        .collect::<PixelMap>(); // convert to PixelMap
+
+    pixel_map
+}
+
+fn main() -> io::Result<()> {
+    let normal_pixel_map = load_to_pixel_map("./normal.png");
+    let scared_pixel_map = load_to_pixel_map("./scared.png");
 
     let mut terminal = ratatui::init();
 
-    let (event_tx, event_rx) = mpsc::channel::<Event>();
+    let (event_tx, event_rx) = channel::<Event>();
     let tx_to_input_events = event_tx.clone();
     thread::spawn(move || {
         handle_input_events(tx_to_input_events);
@@ -73,7 +71,7 @@ fn main() -> io::Result<()> {
         offset: (0.0, 0.0),
         sx: -1.5,
         sy: -1.0,
-        pixel_map: normal_pixel_map,
+        normal_pixel_map,
         scared_pixel_map,
         rng,
     };
@@ -94,19 +92,19 @@ struct App {
     offset: (f64, f64),
     sx: f64,
     sy: f64,
-    pixel_map: HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>>,
-    scared_pixel_map: HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>>,
+    normal_pixel_map: PixelMap,
+    scared_pixel_map: PixelMap,
     rng: ThreadRng,
 }
 
-fn tick(tx: mpsc::Sender<Event>) {
+fn tick(tx: Sender<Event>) {
     loop {
         tx.send(Event::Tick(())).unwrap();
         thread::sleep(Duration::from_millis(1000 / 30));
     }
 }
 
-fn handle_input_events(tx: mpsc::Sender<Event>) {
+fn handle_input_events(tx: Sender<Event>) {
     loop {
         match crossterm::event::read().unwrap() {
             crossterm::event::Event::Key(key_event) => tx.send(Event::Input(key_event)).unwrap(),
@@ -116,11 +114,7 @@ fn handle_input_events(tx: mpsc::Sender<Event>) {
 }
 
 impl App {
-    pub fn run(
-        &mut self,
-        terminal: &mut DefaultTerminal,
-        rx: mpsc::Receiver<Event>,
-    ) -> io::Result<()> {
+    pub fn run(&mut self, terminal: &mut DefaultTerminal, rx: Receiver<Event>) -> io::Result<()> {
         while !self.exit {
             match rx.recv().unwrap() {
                 Event::Input(key_event) => self.handle_key_event(key_event)?,
@@ -159,7 +153,7 @@ impl App {
                 let current_map = if self.is_scared() {
                     &self.scared_pixel_map
                 } else {
-                    &self.pixel_map
+                    &self.normal_pixel_map
                 };
                 for (coord, rv) in current_map {
                     let x = coord.0;
