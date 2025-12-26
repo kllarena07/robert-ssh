@@ -2,6 +2,8 @@ use std::{collections::HashMap, io, sync::mpsc, thread, time::Duration};
 
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use image::{ImageReader, Rgb};
+use ordered_float::OrderedFloat;
+use rand::{Rng, rngs::ThreadRng, thread_rng};
 use ratatui::{
     DefaultTerminal, Frame,
     style::Color,
@@ -10,17 +12,47 @@ use ratatui::{
 };
 
 fn main() -> io::Result<()> {
-    let map = ImageReader::open("./favicon-32x32.png")
+    let normal = ImageReader::open("./normal.png")
         .expect("Error: Couldn't find map.png.")
         .decode()
         .expect("Error: Could not decode map.png.");
-    let map_as_rgb = map.to_rgb8();
-    let pixel_map: HashMap<(u32, u32), Rgb<u8>> = map_as_rgb
+    let normal_as_rgb = normal.to_rgb8();
+    let normal_pixel_map: HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>> = normal_as_rgb
         .enumerate_pixels()
-        .map(|(x, y, rgb_val)| ((x, y), rgb_val.to_owned()))
-        .collect::<Vec<((u32, u32), Rgb<u8>)>>() // convert to Vec<((u32, u32), Rgb<u8>)>
+        .map(|(x, y, rgb_val)| {
+            let x = f64::from(x);
+            let y = f64::from(y);
+            let offset = f64::from(y > 1.0) * 0.5;
+            let actual_y = y * offset;
+            (
+                (OrderedFloat(x), OrderedFloat(actual_y)),
+                rgb_val.to_owned(),
+            )
+        })
+        .collect::<Vec<((OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>)>>() // convert to Vec<((f64, f64), Rgb<u8>)>
         .into_iter()
-        .collect::<HashMap<(u32, u32), Rgb<u8>>>(); // <HashMap<(u32, u32), Rgb<u8>>>
+        .collect::<HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>>>(); // <HashMap<(f64, f64), Rgb<u8>>>
+
+    let scared = ImageReader::open("./scared.png")
+        .expect("Error: Couldn't find scared.png.")
+        .decode()
+        .expect("Error: Could not decode scared.png.");
+    let scared_as_rgb = scared.to_rgb8();
+    let scared_pixel_map: HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>> = scared_as_rgb
+        .enumerate_pixels()
+        .map(|(x, y, rgb_val)| {
+            let x = f64::from(x);
+            let y = f64::from(y);
+            let offset = f64::from(y > 1.0) * 0.5;
+            let actual_y = y * offset;
+            (
+                (OrderedFloat(x), OrderedFloat(actual_y)),
+                rgb_val.to_owned(),
+            )
+        })
+        .collect::<Vec<((OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>)>>() // convert to Vec<((f64, f64), Rgb<u8>)>
+        .into_iter()
+        .collect::<HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>>>(); // <HashMap<(f64, f64), Rgb<u8>>>
 
     let mut terminal = ratatui::init();
 
@@ -35,12 +67,16 @@ fn main() -> io::Result<()> {
         tick(tx_to_tick);
     });
 
+    let rng = thread_rng();
     let mut app = App {
         exit: false,
         offset: (0.0, 0.0),
-        sx: -1.5,
+        sx: -1.0,
         sy: -1.0,
-        pixel_map,
+        pixel_map: normal_pixel_map,
+        scared_pixel_map,
+        use_scared: false,
+        rng,
     };
 
     let app_result = app.run(&mut terminal, event_rx);
@@ -59,7 +95,10 @@ struct App {
     offset: (f64, f64),
     sx: f64,
     sy: f64,
-    pixel_map: HashMap<(u32, u32), Rgb<u8>>,
+    pixel_map: HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>>,
+    scared_pixel_map: HashMap<(OrderedFloat<f64>, OrderedFloat<f64>), Rgb<u8>>,
+    use_scared: bool,
+    rng: ThreadRng,
 }
 
 fn tick(tx: mpsc::Sender<Event>) {
@@ -100,40 +139,70 @@ impl App {
         let height = f64::from(fa.height);
 
         if self.offset.1 > 0.0 {
-            self.sy = -self.sy;
+            let magnitude = if self.rng.gen_range(0.0..1.0) < 1.0 / 10.0 {
+                20.0
+            } else {
+                1.0
+            };
+            self.sy = -self.sy.signum() * magnitude;
         }
         if self.offset.1 < -(height - 16.0) {
-            self.sy = -self.sy;
+            let magnitude = if self.rng.gen_range(0.0..1.0) < 1.0 / 10.0 {
+                20.0
+            } else {
+                1.0
+            };
+            self.sy = -self.sy.signum() * magnitude;
         }
         if self.offset.0 < -(width - 32.0) {
-            self.sx = -self.sx;
+            let magnitude = if self.rng.gen_range(0.0..1.0) < 1.0 / 20.0 {
+                20.0
+            } else {
+                1.5
+            };
+            self.sx = -self.sx.signum() * magnitude;
         }
         if self.offset.0 > 0.0 {
-            self.sx = -self.sx;
+            let magnitude = if self.rng.gen_range(0.0..1.0) < 1.0 / 20.0 {
+                20.0
+            } else {
+                1.5
+            };
+            self.sx = -self.sx.signum() * magnitude;
         }
         self.offset.0 += self.sx;
         self.offset.1 += self.sy;
+
+        let speed = (self.sx * self.sx + self.sy * self.sy).sqrt();
+        if speed > 10.0 {
+            self.use_scared = true;
+        } else if speed <= 10.0 {
+            self.use_scared = false;
+        }
 
         let canvas = Canvas::default()
             .marker(Marker::HalfBlock)
             .x_bounds([0.0, width])
             .y_bounds([0.0, height])
             .paint(|ctx| {
-                for (coord, rv) in &self.pixel_map {
-                    let x = f64::from(coord.0);
-                    let y = f64::from(coord.1);
-                    let offset = f64::from(y > 1.0) * 0.5;
-                    let actual_y = y * offset;
+                let current_map = if self.use_scared {
+                    &self.scared_pixel_map
+                } else {
+                    &self.pixel_map
+                };
+                for (coord, rv) in current_map {
+                    let x = coord.0;
+                    let y = coord.1;
                     let px_offset = self.offset.0;
                     let py_offset = self.offset.1;
 
                     // we need to skip all the stuff that's not in view
-                    if x - px_offset > width || height - actual_y + py_offset < 0.0 {
+                    if *x - px_offset > width || height - *y + py_offset < 0.0 {
                         continue;
                     }
 
                     ctx.draw(&Points {
-                        coords: &[(x - px_offset, height - actual_y + py_offset)],
+                        coords: &[(*x - px_offset, height - *y + py_offset)],
                         color: Color::Rgb(rv[0], rv[1], rv[2]),
                     });
                 }
