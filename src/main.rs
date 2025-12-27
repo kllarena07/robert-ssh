@@ -1,54 +1,40 @@
+use std::{io, sync::mpsc::channel, thread};
+
+use rand::thread_rng;
+
 mod app;
-mod player;
-
-use std::{io, sync::mpsc, thread};
-
-use crate::player::Player;
+use crate::app::{App, Event, handle_input_events, load_to_pixel_map, tick};
 
 fn main() -> io::Result<()> {
+    let normal_pixel_map = load_to_pixel_map("./normal.png");
+    let scared_pixel_map = load_to_pixel_map("./scared.png");
+
     let mut terminal = ratatui::init();
 
-    let (event_tx, event_rx) = mpsc::channel::<app::Event>();
-
+    let (event_tx, event_rx) = channel::<Event>();
     let tx_to_input_events = event_tx.clone();
     thread::spawn(move || {
         handle_input_events(tx_to_input_events);
     });
 
-    let tx_to_background_progress_events = event_tx.clone();
+    let tx_to_tick = event_tx.clone();
     thread::spawn(move || {
-        app::run_background_thread(tx_to_background_progress_events);
+        tick(tx_to_tick);
     });
 
-    let players: Vec<Player> = vec![
-        Player { x: 0, y: 0 },
-        Player { x: 5, y: 5 },
-        Player { x: 10, y: 10 },
-    ];
-
-    let mut app = app::App {
+    let rng = thread_rng();
+    let mut app = App {
         exit: false,
-        players,
-        background_progress: 0.0,
+        offset: (0.0, 0.0),
+        sx: -1.5,
+        sy: -1.0,
+        normal_pixel_map,
+        scared_pixel_map,
+        rng,
     };
 
-    // App runs on the main thread.
     let app_result = app.run(&mut terminal, event_rx);
 
-    // Note: If your threads need clean-up (i.e. the computation thread),
-    // you should communicatie to them that the app wants to shut down.
-    // This is not required here, as our threads don't use resources.
     ratatui::restore();
     app_result
-}
-
-fn handle_input_events(tx: mpsc::Sender<app::Event>) {
-    loop {
-        match crossterm::event::read().unwrap() {
-            crossterm::event::Event::Key(key_event) => {
-                tx.send(app::Event::Input(key_event)).unwrap()
-            }
-            _ => {}
-        }
-    }
 }
