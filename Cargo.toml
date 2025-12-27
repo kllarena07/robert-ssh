@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+tokio = { version = "1", features = ["full"] }
 crossterm = "0.29.0"
 image = "0.25.9"
 ordered-float = "5.1.0"
 rand = "0.8"
 ratatui = "0.29.0"
+rand_core = "0.9.3"
+russh = "0.56.0"
+anyhow = "1.0.100"
