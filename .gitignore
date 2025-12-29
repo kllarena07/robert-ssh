@@ -2,3 +2,4 @@
 authorized_keys/*
 !authorized_keys/README.md
 .DS_Store
+*.sh
