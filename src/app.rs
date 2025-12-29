@@ -1,17 +1,10 @@
-use std::{
-    collections::HashMap,
-    io,
-    sync::mpsc::{Receiver, Sender},
-    thread,
-    time::Duration,
-};
+use std::collections::HashMap;
 
-use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use image::{ImageReader, Rgb};
 use ordered_float::OrderedFloat;
-use rand::{Rng, rngs::ThreadRng};
+use rand::{Rng, rngs::StdRng};
 use ratatui::{
-    DefaultTerminal, Frame,
+    Frame,
     style::Color,
     symbols::Marker,
     widgets::canvas::{Canvas, Points},
@@ -48,48 +41,16 @@ pub fn load_to_pixel_map(file_name: &str) -> PixelMap {
     pixel_map
 }
 
-pub enum Event {
-    Input(crossterm::event::KeyEvent),
-    Tick(()),
-}
-
 pub struct App {
-    pub exit: bool,
     pub offset: (f64, f64),
     pub sx: f64,
     pub sy: f64,
     pub normal_pixel_map: PixelMap,
     pub scared_pixel_map: PixelMap,
-    pub rng: ThreadRng,
-}
-
-pub fn tick(tx: Sender<Event>) {
-    loop {
-        tx.send(Event::Tick(())).unwrap();
-        thread::sleep(Duration::from_millis(1000 / 30));
-    }
-}
-
-pub fn handle_input_events(tx: Sender<Event>) {
-    loop {
-        match crossterm::event::read().unwrap() {
-            crossterm::event::Event::Key(key_event) => tx.send(Event::Input(key_event)).unwrap(),
-            _ => {}
-        }
-    }
+    pub rng: StdRng,
 }
 
 impl App {
-    pub fn run(&mut self, terminal: &mut DefaultTerminal, rx: Receiver<Event>) -> io::Result<()> {
-        while !self.exit {
-            match rx.recv().unwrap() {
-                Event::Input(key_event) => self.handle_key_event(key_event)?,
-                Event::Tick(_) => {}
-            }
-            terminal.draw(|frame| self.draw(frame))?;
-        }
-        Ok(())
-    }
     pub fn draw(&mut self, frame: &mut Frame) {
         let fa = frame.area();
         let width = f64::from(fa.width);
@@ -122,24 +83,6 @@ impl App {
                 }
             });
         frame.render_widget(canvas, frame.area());
-    }
-    fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> io::Result<()> {
-        if key_event.kind == KeyEventKind::Press {
-            match key_event.code {
-                KeyCode::Char('q') => {
-                    self.exit = true;
-                }
-                KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.exit = true;
-                }
-                KeyCode::Esc => {
-                    self.exit = true;
-                }
-                _ => {}
-            };
-        }
-
-        Ok(())
     }
     fn check_bounds(&mut self, width: f64, height: f64) {
         if self.offset.1 > 0.0 {

@@ -1,0 +1,21 @@
+services:
+  robert-ssh:
+    image: robert-ssh:latest
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 256MB
+    ports:
+      - "8243:2222"
+    stdin_open: true
+    tty: true
+    secrets:
+      - source: host_key
+        target: /run/secret/authorized_keys/id_ed25519
+secrets:
+  host_key:
+    file: ./authorized_keys/id_ed25519
