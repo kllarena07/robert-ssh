@@ -94,6 +94,7 @@ impl AppServer {
         let mut methods = MethodSet::empty();
         methods.push(MethodKind::None);
 
+        // refactor this to use proper authorized keys in the Dockerfile
         let config = Config {
             inactivity_timeout: Some(std::time::Duration::from_secs(3600)),
             auth_rejection_time: std::time::Duration::from_secs(3),
@@ -106,6 +107,7 @@ impl AppServer {
             ..Default::default()
         };
 
+        println!("Starting server on port 2222");
         self.run_on_address(Arc::new(config), ("0.0.0.0", 2222))
             .await?;
         Ok(())
@@ -170,17 +172,36 @@ impl Handler for AppServer {
             // Pressing 'q' closes the connection.
             b"q" => {
                 self.clients.lock().await.remove(&self.id);
-                for _ in 0..2 {
-                    if let Err(e) = session.handle().data(channel, EXIT_ALT_SCREEN.into()).await {
-                        eprintln!("Failed to exit alternate screen: {:?}", e);
-                    }
-                }
-                if let Err(e) = session.handle().data(channel, SHOW_CURSOR.into()).await {
-                    eprintln!("Failed to show cursor: {:?}", e);
-                }
+                session
+                    .handle()
+                    .data(channel, EXIT_ALT_SCREEN.into())
+                    .await
+                    .unwrap();
+                session
+                    .handle()
+                    .data(channel, SHOW_CURSOR.into())
+                    .await
+                    .unwrap();
+
+                // tokio::task::yield_now().await;
+                // this function doesn't even work
 
                 // this timing is needed
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                // everything gets flushed AFTER this await for some reason
+
+                // this function is just not working properly
+                // oh it's because the connection is being closed before the data is sent?
+                // when i quit i get the connection closed and then if i go back it doesn't
+                // show that so it's not being sent properly
+                // yes that's why
+                //
+                // however, something weird happens where if we await the channel closing,
+                // it doesn't work properly
+
+                // session.close(channel)?;
+                // i think the issue is that this function is syncronous so it doesn't
+                // care if the async function above have occured
                 session
                     .handle()
                     .disconnect(Disconnect::ByApplication, "".to_string(), "".to_string())
@@ -261,7 +282,13 @@ impl Handler for AppServer {
         _channel: ChannelId,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
-        self.clients.lock().await.remove(&self.id);
+        println!("Channel has been closed");
+
+        // this doesn't work for some reason
+        // okay yeah so i looked at the code and this literally closes the channel
+        // before any data can come through
+        // i have no idea why we can't just send the data and then close the channel
+        // though since that doesn't work
         Ok(())
     }
 }
