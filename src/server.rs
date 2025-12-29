@@ -1,13 +1,13 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use rand::SeedableRng;
-use rand::rngs::{OsRng, StdRng};
+use rand::rngs::StdRng;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
 use ratatui::{Terminal, TerminalOptions, Viewport};
-use russh::keys::ssh_key;
-use russh::{Channel, ChannelId, Disconnect, Pty};
+use russh::{Channel, ChannelId, Pty};
 use russh::{MethodKind, MethodSet, server::*};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -79,6 +79,24 @@ impl AppServer {
         }
     }
 
+    fn load_host_keys() -> Result<russh::keys::PrivateKey, anyhow::Error> {
+        let secrets_location =
+            env::var("SECRETS_LOCATION").expect("SECRETS_LOCATION was not defined.");
+        let key_path = Path::new(&secrets_location);
+
+        if !key_path.exists() {
+            return Err(anyhow::anyhow!(
+                "Host key not found at {}. Please generate host keys first.",
+                key_path.display()
+            ));
+        }
+
+        let key = russh::keys::PrivateKey::read_openssh_file(key_path)
+            .map_err(|e| anyhow::anyhow!("Failed to read host key: {}", e))?;
+
+        Ok(key)
+    }
+
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
         let clients = self.clients.clone();
         tokio::spawn(async move {
@@ -94,15 +112,15 @@ impl AppServer {
         let mut methods = MethodSet::empty();
         methods.push(MethodKind::None);
 
-        // refactor this to use proper authorized keys in the Dockerfile
+        let host_key = Self::load_host_keys()
+            .map_err(|e| anyhow::anyhow!("Failed to load host keys: {}", e))?;
+
         let config = Config {
             inactivity_timeout: Some(std::time::Duration::from_secs(3600)),
             auth_rejection_time: std::time::Duration::from_secs(3),
             auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
             methods,
-            keys: vec![
-                russh::keys::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap(),
-            ],
+            keys: vec![host_key],
             nodelay: true,
             ..Default::default()
         };
@@ -171,42 +189,11 @@ impl Handler for AppServer {
         match data {
             // Pressing 'q' closes the connection.
             b"q" => {
+                let reset_sequence = [EXIT_ALT_SCREEN, SHOW_CURSOR].concat();
+                let _ = session.data(channel, reset_sequence.into());
+
                 self.clients.lock().await.remove(&self.id);
-                session
-                    .handle()
-                    .data(channel, EXIT_ALT_SCREEN.into())
-                    .await
-                    .unwrap();
-                session
-                    .handle()
-                    .data(channel, SHOW_CURSOR.into())
-                    .await
-                    .unwrap();
-
-                // tokio::task::yield_now().await;
-                // this function doesn't even work
-
-                // this timing is needed
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                // everything gets flushed AFTER this await for some reason
-
-                // this function is just not working properly
-                // oh it's because the connection is being closed before the data is sent?
-                // when i quit i get the connection closed and then if i go back it doesn't
-                // show that so it's not being sent properly
-                // yes that's why
-                //
-                // however, something weird happens where if we await the channel closing,
-                // it doesn't work properly
-
-                // session.close(channel)?;
-                // i think the issue is that this function is syncronous so it doesn't
-                // care if the async function above have occured
-                session
-                    .handle()
-                    .disconnect(Disconnect::ByApplication, "".to_string(), "".to_string())
-                    .await
-                    .map_err(anyhow::Error::from)?;
+                session.close(channel)?;
             }
 
             _ => {}
@@ -279,16 +266,13 @@ impl Handler for AppServer {
 
     async fn channel_close(
         &mut self,
-        _channel: ChannelId,
-        _session: &mut Session,
+        channel: ChannelId,
+        session: &mut Session,
     ) -> Result<(), Self::Error> {
-        println!("Channel has been closed");
+        let reset_sequence = [EXIT_ALT_SCREEN, SHOW_CURSOR].concat();
+        let _ = session.data(channel, reset_sequence.into());
 
-        // this doesn't work for some reason
-        // okay yeah so i looked at the code and this literally closes the channel
-        // before any data can come through
-        // i have no idea why we can't just send the data and then close the channel
-        // though since that doesn't work
+        self.clients.lock().await.remove(&self.id);
         Ok(())
     }
 }
